@@ -1,0 +1,25 @@
+[Unit]
+Description=SSH QoS Priority
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '\
+  tc qdisc del dev ens3 root 2>/dev/null || true; \
+  ip6tables -t mangle -D OUTPUT -p tcp --dport 22 -j MARK --set-mark 1 2>/dev/null || true; \
+  ip6tables -t mangle -D OUTPUT -p tcp --sport 22 -j MARK --set-mark 1 2>/dev/null || true; \
+  tc qdisc replace dev ens3 root handle 1: prio && \
+  tc filter add dev ens3 protocol ip parent 1:0 prio 1 u32 match ip protocol 6 0xff match tcp dst 22 0xffff flowid 1:1 && \
+  tc filter add dev ens3 protocol ip parent 1:0 prio 1 u32 match ip protocol 6 0xff match tcp src 22 0xffff flowid 1:1 && \
+  ip6tables -t mangle -A OUTPUT -p tcp --dport 22 -j MARK --set-mark 1 && \
+  ip6tables -t mangle -A OUTPUT -p tcp --sport 22 -j MARK --set-mark 1 && \
+  tc filter add dev ens3 parent 1:0 prio 2 handle 1 fw flowid 1:1'
+ExecStop=/bin/bash -c '\
+  tc qdisc del dev ens3 root; \
+  ip6tables -t mangle -D OUTPUT -p tcp --dport 22 -j MARK --set-mark 1; \
+  ip6tables -t mangle -D OUTPUT -p tcp --sport 22 -j MARK --set-mark 1'
+
+[Install]
+WantedBy=multi-user.target
